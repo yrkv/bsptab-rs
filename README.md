@@ -4,6 +4,7 @@ This is essentially just a rust rewrite of [bsptab](https://github.com/albertore
 changes that align much better with how I'd like to use it.
 
 The main draw for this version is the simple/intuitive interface:
+
     * `bsptab-rs create [WID]...` takes a list of window ids, which all get combined into a single `tabbed -c -d` instance. Any existing tabbed instances get flattened out, so you never end up with nested `tabbed`s. This simple behavior enables all of the following:
         * `create <WID>` -- turning any window into a tabbed instance.
         * `create <WID0> <WID1>` -- if `WID0` and `WID1` are both normal windows, this creates a `tabbed` and adds both windows to it.
