@@ -3,7 +3,13 @@
 This is essentially just a rust rewrite of [bsptab](https://github.com/albertored11/bsptab) with
 changes that align much better with how I'd like to use it.
 
-The main draw for this version is the simple/intuitive interface:
+I found the original `bsptab` quite nice, but I kept finding myself wanting to:
+
+- merge multiple `tabbed`s together all at once
+- completely explode a `tabbed`
+- immediately embed exactly one window to a `tabbed`
+
+For these reasons, these are the exact features implemented in my version. The main draw for this version is the simple/intuitive interface:
 
 * `bsptab-rs create [WID]...` takes a list of window ids, which all get combined into a single `tabbed -c -d` instance. Any existing tabbed instances get flattened out, so you never end up with nested `tabbed`s. This simple behavior enables all of the following:
     * `create <WID>` -- turning any window into a tabbed instance.
@@ -13,7 +19,7 @@ The main draw for this version is the simple/intuitive interface:
 * `bsptab-rs detach <TAB>` takes the id of a `tabbed` window and detaches the currently focused window (reparenting it to the root).
     * `detach --all <TAB>` -- will instead detach all of the windows, deleting the tabbed instance under normal operation. Good for if you decide you no longer want some windows tabbed together, and would rather see them all at once.
     * no-op if the provided window id is not a `tabbed`.
-* `bsptab-rs embed <WID>` turns calls `create <WID>` and creates a one-time listener for a new node being added to the bspwm tree. When a new node is created (i.e. the next opened window), it gets attached with `<WID>`.
+* `bsptab-rs embed <WID>` first calls `create <WID>` and then creates a one-time listener for a new node being added to the bspwm tree. When a new node is created (i.e. the next opened window), it gets attached with `<WID>`.
     * `embed <WID> & <command>` turns `WID` into a `tabbed` and embeds the window opened by `command` with it. This is particularly useful for opening a new terminal in the same `tabbed`, but can work for anything that opens a window.
     * Do note that the listener applies to any node opened anywhere.
 * For convenience, any window/tabbed id can also be "focused", which simply replaces it with the focused window at runtime. Most of my personal keybinds use this.
