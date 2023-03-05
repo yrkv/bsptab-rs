@@ -24,6 +24,11 @@ For these reasons, these are the exact features implemented in my version. The m
     * Do note that the listener applies to any node opened anywhere.
 * For convenience, any window/tabbed id can also be "focused", which simply replaces it with the focused window at runtime. Most of my personal keybinds use this.
 
+### Installation
+
+Install [tabbed](https://tools.suckless.org/tabbed) and rust.
+
+`cargo build --release` creates a binary at `target/release/bsptab-rs` which you can copy to somewhere in your path.
 
 ### Example keybindings for sxhkd
 
