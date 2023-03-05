@@ -12,20 +12,6 @@ use clap::{Parser, Subcommand};
 use clap_num::maybe_hex;
 
 
-#[derive(Clone, Debug)]
-enum WidOrFocused {
-    Wid(Window),
-    Focused,
-}
-
-fn maybe_hex_or_focused(s: &str) -> Result<WidOrFocused, String> {
-    Ok(match s {
-        "focused" => WidOrFocused::Focused,
-        s => WidOrFocused::Wid(maybe_hex::<Window>(s)?),
-    })
-}
-
-
 /// Utility functions to manipulate a tabbed window.
 /// All input window ids can be in decimal, hex with the prefix "0x", or the string "focused" to
 /// apply to the currently focused window.
@@ -41,14 +27,14 @@ enum Commands {
     /// Reparent a set of windows to a tabbed instance, creating one if necessary
     Create {
         /// Window IDs to combine into a tabbed instance
-        #[arg(value_parser=maybe_hex_or_focused)]
-        wid: Vec<WidOrFocused>,
+        #[arg()]
+        wids: Vec<String>,
     },
     /// Detach from a tabbed container; by default, detaches active window only
     Detach {
         /// Window to detach from, expected to be a tabbed instance, no-op otherwise
-        #[arg(value_parser=maybe_hex_or_focused)]
-        wid: WidOrFocused,
+        #[arg()]
+        wid: String,
 
         /// Detach all children of the window instead of only active; deletes the tabbed instance
         #[arg(short,long)]
@@ -57,15 +43,15 @@ enum Commands {
     /// Embed the next opened program with the target window
     Embed {
         /// Target window to autoattach to once
-        #[arg(value_parser=maybe_hex_or_focused)]
-        wid: WidOrFocused,
+        #[arg()]
+        wid: String,
     },
 }
 
 
 
 
-fn main() -> Result<(), ReplyError> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     let (conn, screen_num) = x11rb::connect(None).unwrap();
@@ -73,21 +59,17 @@ fn main() -> Result<(), ReplyError> {
     let root = screen.root;
 
     match cli.command {
-        Commands::Create { wid } => {
-            let wid = resolve_wids(&conn, wid, root)?;
-            create(&conn, wid)?;
+        Commands::Create { wids } => {
+            create(&conn, resolve_wids(wids)?)?;
         },
         Commands::Detach { wid, all: true } => {
-            let wid = resolve_wid(&conn, wid, root)?;
-            detach_all(&conn, wid, root)?;
+            detach_all(&conn, resolve_wid(&wid)?, root)?;
         },
         Commands::Detach { wid, all: false } => {
-            let wid = resolve_wid(&conn, wid, root)?;
-            detach_current(&conn, wid, root)?;
+            detach_current(&conn, resolve_wid(&wid)?, root)?;
         },
         Commands::Embed { wid } => {
-            let wid = resolve_wid(&conn, wid, root)?;
-            embed(&conn, wid)?;
+            embed(&conn, resolve_wid(&wid)?)?;
         },
     }
 
@@ -180,12 +162,6 @@ fn detach_current(conn: &RustConnection, wid: Window, root: Window) -> Result<()
 }
 
 
-fn bspc_disable_border(wid: Window) {
-    Command::new("bspc")
-        .args(["config", "-n", &wid.to_string(), "border_width", "0"])
-        .status()
-        .unwrap();
-}
 
 
 fn create_tabbed() -> Window {
@@ -203,21 +179,39 @@ fn create_tabbed() -> Window {
 }
 
 
-fn resolve_wids(conn: &RustConnection, wofs: Vec<WidOrFocused>, root: Window)
-    -> Result<Vec<Window>, ReplyError> {
-        wofs.into_iter().map(|wof| resolve_wid(conn, wof, root)).collect()
+fn resolve_wids(wids: Vec<String>) -> Result<Vec<Window>, String> {
+        wids.into_iter().map(|wid| resolve_wid(&wid)).collect()
 }
 
-fn resolve_wid(conn: &RustConnection, wof: WidOrFocused, root: Window) -> Result<Window, ReplyError> {
-    match wof {
-        WidOrFocused::Wid(wid) => Ok(wid),
-        WidOrFocused::Focused => get_focused_wid(conn, root),
+fn resolve_wid(wid: &str) -> Result<Window, String> {
+    maybe_hex(wid).or_else(|_| bspc_query_node(wid))
+}
+
+fn bspc_disable_border(wid: Window) {
+    Command::new("bspc")
+        .args(["config", "-n", &wid.to_string(), "border_width", "0"])
+        .status()
+        .expect("failed to execute bspc config");
+}
+
+fn bspc_query_node(node_sel: &str) -> Result<Window, String> {
+    let out = Command::new("bspc")
+        .args(["query", "-N", "-n", node_sel])
+        .output()
+        .expect("failed to execute bspc query");
+    
+    if out.stderr != b"" {
+        let err = String::from_utf8(out.stderr).unwrap();
+        let err = err.strip_prefix("query -n: ").unwrap_or(&err).trim();
+        return Err(err.to_string());
     }
-}
 
-fn get_focused_wid(conn: &RustConnection, root: Window) -> Result<Window, ReplyError> {
-    let atom = intern_atom(conn, false, b"_NET_ACTIVE_WINDOW")?.reply()?.atom;
-    let reply = get_property(conn, false, root, atom, AtomEnum::WINDOW, 0, 1)?.reply()?;
-    let wid: Window = reply.value32().unwrap().next().unwrap();
-    Ok(wid)
+    if out.stdout == b"" {
+        return Err(format!("Descriptor matched no nodes: '{}'.", node_sel));
+    }
+
+    let id_str = std::str::from_utf8(&out.stdout).unwrap()
+        .strip_prefix("0x").unwrap().trim();
+
+    Window::from_str_radix(id_str, 16).map_err(|e| format!("{e}"))
 }

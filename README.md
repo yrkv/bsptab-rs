@@ -22,7 +22,7 @@ For these reasons, these are the exact features implemented in my version. The m
 * `bsptab-rs embed <WID>` first calls `create <WID>` and then creates a one-time listener for a new node being added to the bspwm tree. When a new node is created (i.e. the next opened window), it gets attached with `<WID>`.
     * `embed <WID> & <command>` turns `WID` into a `tabbed` and embeds the window opened by `command` with it. This is particularly useful for opening a new terminal in the same `tabbed`, but can work for anything that opens a window.
     * Do note that the listener applies to any node opened anywhere.
-* For convenience, any window/tabbed id can also be "focused", which simply replaces it with the focused window at runtime. Most of my personal keybinds use this.
+* For convenience, any window/tabbed id can also be a bspc node\_sel, which simply calls `bspc query -N -n <node_sel>` at runtime to get the correct window id. This means that you can use strings like "focused" or "west" when using `bsptab-rs`.
 
 ### Installation
 
@@ -56,12 +56,13 @@ super + t; e
 super + t; {super +, } z
     { , } bsptab-rs embed focused & alacritty
 super + t; {h,j,k,l}
-    bsptab-rs create focused $(bspc query -N -n {west,south,north,east})
+    bsptab-rs create focused {west,south,north,east}
 ```
 
 ### TODO
 
 - [ ] Proper testing (how do I test a program like this properly?)
-- [ ] Support for bspc node selectors by passing to `bspc query -N -n`
+- [ ] Better error handling
+- [x] Support for bspc node selectors by passing to `bspc query -N -n`
 - [ ] Maintain tab ordering more consistently
 - [ ] Parity with original bsptab (maybe not fully?)
