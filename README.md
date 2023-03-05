@@ -58,3 +58,9 @@ super + t; {super +, } z
 super + t; {h,j,k,l}
     bsptab-rs create focused $(bspc query -N -n {west,south,north,east})
 ```
+
+### TODO
+
+[ ] Support for bspc node selectors by passing to `bspc query -N -n`
+[ ] Maintain tab ordering more consistently
+[ ] Parity with original bsptab (maybe not fully?)
