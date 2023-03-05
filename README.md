@@ -64,5 +64,6 @@ super + t; {h,j,k,l}
 - [ ] Proper testing (how do I test a program like this properly?)
 - [ ] Better error handling
 - [x] Support for bspc node selectors by passing to `bspc query -N -n`
+   - [ ] Would it be cleaner/faster to `send` to the socket directly instead of calling a `bspc` command?
 - [ ] Maintain tab ordering more consistently
 - [ ] Parity with original bsptab (maybe not fully?)
