@@ -22,6 +22,9 @@ For these reasons, these are the exact features implemented in my version. The m
 * `bsptab-rs embed <WID>` first calls `create <WID>` and then creates a one-time listener for a new node being added to the bspwm tree. When a new node is created (i.e. the next opened window), it gets attached with `<WID>`.
     * `embed <WID> & <command>` turns `WID` into a `tabbed` and embeds the window opened by `command` with it. This is particularly useful for opening a new terminal in the same `tabbed`, but can work for anything that opens a window.
     * Do note that the listener applies to any node opened anywhere.
+* `bsptab-rs transfer <WID0> <WID1>` is equivalent to `attach` in the older bsptab implementation, just much faster. Quoting, "Attach window <wid0> to tabbed container <wid1>. If <wid0> is a tabbed container, detach the active window and attach it to the new container. If <wid1> is not a tabbed container, call create <wid1> first."
+    * This is more like i3-style tabs.
+    * Due to bugs in `tabbed`, this has to completely rip apart the first tabbed and remake it. 
 * For convenience, any window/tabbed id can also be a bspc node\_sel, which simply calls `bspc query -N -n <node_sel>` at runtime to get the correct window id. This means that you can use strings like "focused" or "west" when using `bsptab-rs`.
 
 ### Installation
@@ -44,7 +47,9 @@ This is a (slightly edited/simplified) excerpt from my current sxhkdrc file.
 #   shift + r           (detach --all) remove all windows from tabbed container
 #   e                   (embed) attach next opened window to focused window
 #   z                   (embed terminal) attach a terminal to focused window
-#   {h,j,k,l}           (merge) merge focused tabbed/window with target tabbed/window
+#   {h,j,k,l}           (create) merge focused tabbed/window with target tabbed/window
+#   arrows              (transfer) attach focused window with target tabbed/window
+
 super + t; t
     bsptab-rs create focused
 super + t; r
@@ -57,6 +62,8 @@ super + t; {super +, } z
     { , } bsptab-rs embed focused & alacritty
 super + t; {h,j,k,l}
     bsptab-rs create focused {west,south,north,east}
+super + t; {Left,Down,Up,Right}
+    bsptab-rs transfer focused {west,south,north,east}
 ```
 
 ### TODO
@@ -64,6 +71,8 @@ super + t; {h,j,k,l}
 - [ ] Proper testing (how do I test a program like this properly?)
 - [ ] Better error handling
 - [x] Support for bspc node selectors by passing to `bspc query -N -n`
-   - [ ] Would it be cleaner/faster to `send` to the socket directly instead of calling a `bspc` command?
+    - [ ] Would it be cleaner/faster to `send` to the socket directly instead of calling a `bspc` command?
 - [ ] Maintain tab ordering more consistently
-- [ ] Parity with original bsptab (maybe not fully?)
+- [-] Parity with original bsptab (maybe not fully?)
+    - [x] attach
+    - [ ] autoattach

@@ -11,6 +11,9 @@ use std::io::BufRead;
 use clap::{Parser, Subcommand};
 use clap_num::maybe_hex;
 
+use nonempty::{NonEmpty, nonempty};
+
+
 
 /// Utility functions to manipulate a tabbed window.
 /// All input window ids can be in decimal, hex with the prefix "0x", or the string "focused" to
@@ -26,9 +29,19 @@ struct Cli {
 enum Commands {
     /// Reparent a set of windows to a tabbed instance, creating one if necessary
     Create {
-        /// Window IDs to combine into a tabbed instance
-        #[arg()]
+        // Window IDs to combine into a tabbed instance
+        #[arg(num_args=1..)]
         wids: Vec<String>,
+    },
+    /// Attach window <WID0> to tabbed <WID1>.
+    ///
+    /// If <WID0> is tabbed, use the active window instead.
+    /// If <WID1> is not tabbed, call `create <WID1>` first.
+    Transfer {
+        #[arg()]
+        wid0: String,
+        #[arg()]
+        wid1: String,
     },
     /// Detach from a tabbed container; by default, detaches active window only
     Detach {
@@ -39,6 +52,17 @@ enum Commands {
         /// Detach all children of the window instead of only active; deletes the tabbed instance
         #[arg(short,long)]
         all: bool,
+    },
+    /// Reparent all children of a node back to itself.
+    ///
+    /// tabbed is rather buggy, and it's hard to guarantee this won't ever be necessary.
+    Fix {
+        #[arg()]
+        wid: String,
+    },
+    Query {
+        #[arg()]
+        wid: String,
     },
     /// Embed the next opened program with the target window
     Embed {
@@ -60,13 +84,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Commands::Create { wids } => {
-            create(&conn, resolve_wids(wids)?)?;
+            let wids = NonEmpty::from_vec(resolve_wids(&wids)?)
+                .expect("create args cannot be empty");
+            create(&conn, wids)?;
+        },
+        Commands::Transfer { wid0, wid1 } => {
+            transfer(&conn, resolve_wid(&wid0)?, resolve_wid(&wid1)?, root)?;
         },
         Commands::Detach { wid, all: true } => {
-            detach_all(&conn, resolve_wid(&wid)?, root)?;
+            reparent_all(&conn, resolve_wid(&wid)?, root)?;
         },
         Commands::Detach { wid, all: false } => {
             detach_current(&conn, resolve_wid(&wid)?, root)?;
+        },
+        Commands::Fix { wid } => {
+            let wid = resolve_wid(&wid)?;
+            reparent_all(&conn, wid, wid)?;
+        },
+        Commands::Query { wid } => {
+            let wid = resolve_wid(&wid)?;
+            query(&conn, wid)?;
         },
         Commands::Embed { wid } => {
             embed(&conn, resolve_wid(&wid)?)?;
@@ -78,39 +115,60 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 
-fn create(conn: &RustConnection, wid: Vec<Window>) -> Result<Window, ReplyError> {
+fn create(conn: &RustConnection, wids: NonEmpty<Window>) -> Result<Window, ReplyError> {
     let mut to_reparent = Vec::new();
-    let mut last_tabbed: Option<Window> = None;
 
-    for w in wid {
+    for &w in wids.iter().take(wids.len() - 1) {
         if is_tabbed(conn, w)? {
-            if let Some(last_w) = last_tabbed {
-                let mut last_q = query_tree(conn, last_w)?.reply()?;
-                to_reparent.append(&mut last_q.children);
-            }
-            last_tabbed = Some(w);
+            let mut q = query_tree(conn, w)?.reply()?;
+            to_reparent.append(&mut q.children);
         } else {
-            bspc_disable_border(w);
+            bspc_disable_border(&w.to_string());
             to_reparent.push(w);
         }
     }
 
-    // If a tabbed instance was in the list, use it. Otherwise, spawn a new tabbed and use that
-    let tabbed_window = last_tabbed.unwrap_or_else(create_tabbed);
+    let &last = wids.last();
+    bspc_focus(last);
 
-    for w in &to_reparent {
-        reparent_window(conn, *w, tabbed_window, 0, 0)?.check()?;
+    // If the last window is tabbed, use it. Otherwise, spawn a new tabbed and use that
+    let tabbed = if is_tabbed(conn, last)? {
+        last
+    } else {
+        bspc_disable_border(&last.to_string());
+        let t = create_tabbed();
+        reparent_window(conn, last, t, 0, 0)?.check()?;
+        t
+    };
+
+    //for &w in to_reparent.iter().rev() {
+    for &w in &to_reparent {
+        reparent_window(conn, w, tabbed, 0, 0)?.check()?;
     }
 
-    // sometimes the tabs get a bit "stuck". Reparenting them all back seems to fix it
-    detach_all(conn, tabbed_window, tabbed_window)?;
+    conn.flush()?;
 
-    Ok(tabbed_window)
+    // Sometimes the tabs get a bit "stuck". Reparenting them all back seems to fix it
+    if query_tree(conn, tabbed)?.reply()?.children_len() > 1 {
+        reparent_all(conn, tabbed, tabbed)?;
+    }
+
+    Ok(tabbed)
+}
+
+
+fn transfer(conn: &RustConnection, wid0: Window, wid1: Window, root: Window) -> Result<(), ReplyError> {
+    let wid0 = detach_current(conn, wid0, root)?.unwrap_or(wid0);
+    let _ = create(conn, nonempty![
+           wid0, wid1
+    ])?;
+    Ok(())
 }
 
 
 fn embed(conn: &RustConnection, wid: Window) -> Result<(), ReplyError> {
-    let tabbed_window = create(conn, vec![wid])?;
+    bspc_focus(wid);
+    let tabbed_window = create(conn, nonempty![wid])?;
 
     let child = Command::new("bspc")
         .args(["subscribe", "node_add"])
@@ -126,7 +184,7 @@ fn embed(conn: &RustConnection, wid: Window) -> Result<(), ReplyError> {
         let id_str = parts[4].strip_prefix("0x").unwrap().trim();
         let new_wid = Window::from_str_radix(id_str, 16).unwrap();
 
-        bspc_disable_border(new_wid);
+        bspc_disable_border(&new_wid.to_string());
         reparent_window(conn, new_wid, tabbed_window, 0, 0)?.check()?;
     }
 
@@ -140,28 +198,59 @@ fn is_tabbed(conn: &RustConnection, wid: Window) -> Result<bool, ReplyError> {
 }
 
 
-fn detach_all(conn: &RustConnection, wid: Window, root: Window) -> Result<(), ReplyError> {
-    let q = query_tree(conn, wid)?.reply()?;
-    if q.length > 1 {
-        for w in q.children {
-            reparent_window(conn, w, root, 0, 0)?.check()?;
+fn reparent_all(conn: &RustConnection, wid0: Window, wid1: Window) -> Result<Vec<Window>, ReplyError> {
+    let q = query_tree(conn, wid0)?.reply()?;
+
+    for &w in &q.children {
+        reparent_window(conn, w, wid1, 0, 0)?.check()?;
+    }
+
+    Ok(q.children)
+}
+
+
+//// this would be faster/better than detach_current in most cases, but tabbed is terribly buggy
+//fn reparent_current(conn: &RustConnection, wid0: Window, wid1: Window) -> Result<Option<Window>, ReplyError> {
+//    let q = query_tree(conn, wid0)?.reply()?;
+//    if let Some(&active) = q.children.last() {
+//        reparent_window(conn, active, wid1, 0, 0)?.check()?;
+//        Ok(Some(active))
+//    } else {
+//        Ok(None)
+//    }
+//}
+
+fn detach_current(conn: &RustConnection, wid: Window, root: Window) -> Result<Option<Window>, ReplyError> {
+    // tabbed doesn't properly deal with reparenting away from itself so we detach all and make a
+    // new one. Hopefully there's some way to not have to do this BS. Tabbed is only around a
+    // thousand LoC, maybe I could try to just fix it.
+    
+    let children = reparent_all(conn, wid, root)?;
+
+    if let Some((&active, rest)) = children.split_last() {
+        if !rest.is_empty() {
+            bspc_disable_border(&(rest[0].to_string() + "#first_ancestor"));
+            let tabbed_window = create_tabbed();
+            for &child in rest {
+                reparent_window(conn, child, tabbed_window, 0, 0)?.check()?;
+            }
         }
-    }
 
-    Ok(())
+        reparent_window(conn, active, root, 0, 0)?.check()?;
+
+        Ok(Some(active))
+    } else {
+        Ok(None)
+    }
 }
 
 
-fn detach_current(conn: &RustConnection, wid: Window, root: Window) -> Result<(), ReplyError> {
-    let q = query_tree(conn, wid)?.reply()?;
-    if let Some(&first) = q.children.last() {
-        reparent_window(conn, first, root, 0, 0)?.check()?;
-    }
-
+fn query(conn: &RustConnection, wid: Window) -> Result<(), ReplyError> {
+    println!("wid: 0x{:X} {}", wid, wid);
+    println!("is_tabbed: {}", is_tabbed(conn, wid)?);
+    println!("children: {:?}", query_tree(conn, wid)?.reply()?.children);
     Ok(())
 }
-
-
 
 
 fn create_tabbed() -> Window {
@@ -179,19 +268,27 @@ fn create_tabbed() -> Window {
 }
 
 
-fn resolve_wids(wids: Vec<String>) -> Result<Vec<Window>, String> {
-        wids.into_iter().map(|wid| resolve_wid(&wid)).collect()
+fn resolve_wids(wids: &Vec<String>) -> Result<Vec<Window>, String> {
+        wids.iter().map(|wid| resolve_wid(wid)).collect()
 }
 
 fn resolve_wid(wid: &str) -> Result<Window, String> {
     maybe_hex(wid).or_else(|_| bspc_query_node(wid))
 }
 
-fn bspc_disable_border(wid: Window) {
+
+fn bspc_disable_border(node_sel: &str) {
     Command::new("bspc")
-        .args(["config", "-n", &wid.to_string(), "border_width", "0"])
+        .args(["config", "-n", node_sel, "border_width", "0"])
         .status()
         .expect("failed to execute bspc config");
+}
+
+fn bspc_focus(wid: Window) {
+    Command::new("bspc")
+        .args(["node", &wid.to_string(), "--focus"])
+        .status()
+        .expect("failed to execute bspc node");
 }
 
 fn bspc_query_node(node_sel: &str) -> Result<Window, String> {

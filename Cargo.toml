@@ -9,4 +9,4 @@ edition = "2021"
 x11rb = "0.11"
 clap = { version = "4.1", features = ["derive"] }
 clap-num = "*"
-num-traits = "0.2"
+nonempty = "0.8"
