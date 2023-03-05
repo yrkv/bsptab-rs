@@ -61,6 +61,7 @@ super + t; {h,j,k,l}
 
 ### TODO
 
+- [ ] Proper testing (how do I test a program like this properly?)
 - [ ] Support for bspc node selectors by passing to `bspc query -N -n`
 - [ ] Maintain tab ordering more consistently
 - [ ] Parity with original bsptab (maybe not fully?)
