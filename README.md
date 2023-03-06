@@ -68,24 +68,27 @@ super + t; {Left,Down,Up,Right}
 
 ### Demo
 
-- Combine two windows into a single `tabbed`
-- Open a new window as a tab
+
+
 
 [demo1.webm](https://user-images.githubusercontent.com/11140316/223055843-8e64e3a6-cfd5-41e4-a456-2c9394ea8280.webm)
+- `bsptab-rs create` -- Combine two windows into a single `tabbed`
+- `bsptab-rs embed` -- Open a new window as a tab
 
 
 
-- Merge multiple `tabbed`s together
-- Detach one window
 
 [demo2.webm](https://user-images.githubusercontent.com/11140316/223056125-db92b8eb-8db9-4b54-9e83-ae590ba843b7.webm)
+- `bsptab-rs create` -- Merge multiple `tabbed`s together
+- `bsptab-rs detach` -- Detach one window
 
 
-- Transfer from one `tabbed` to another
-- Detach all windows from a `tabbed`
+
+
 
 [demo3.webm](https://user-images.githubusercontent.com/11140316/223056151-6b444fb3-fbdc-4702-b81d-e16f59fe1bc9.webm)
-
+- `bsptab-rs transfer` -- Transfer from one `tabbed` to another
+- `bsptab-rs detach --all` -- Detach all windows from a `tabbed`
 
 
 ### TODO
